@@ -32,8 +32,39 @@ export class CycleError extends Error {
  * @throws {TypeError} If a dependency value is not an array.
  */
 export function planOrder(tasks) {
-  // TODO(001): implement per tasks/001-plan-order.md
-  throw new Error('not implemented: planOrder');
+  const { ids, deps } = normalize(tasks);
+
+  // Number of dependencies still waiting to be emitted for each task.
+  const remaining = new Map();
+  // Reverse edges: dep id -> tasks that depend on it.
+  const dependents = new Map();
+  for (const id of ids) {
+    remaining.set(id, deps.get(id).length);
+    dependents.set(id, []);
+  }
+  for (const id of ids) {
+    for (const dep of deps.get(id)) {
+      dependents.get(dep).push(id);
+    }
+  }
+
+  const ready = ids.filter((id) => remaining.get(id) === 0);
+  const result = [];
+
+  while (ready.length > 0) {
+    ready.sort();
+    const id = ready.shift();
+    result.push(id);
+    for (const dependent of dependents.get(id)) {
+      remaining.set(dependent, remaining.get(dependent) - 1);
+      if (remaining.get(dependent) === 0) ready.push(dependent);
+    }
+  }
+
+  if (result.length !== ids.length) {
+    throw new CycleError(findCycle(tasks));
+  }
+  return result;
 }
 
 /**
@@ -43,6 +74,69 @@ export function planOrder(tasks) {
  * @returns {string[] | null} The cycle path, or null if the graph is acyclic.
  */
 export function findCycle(tasks) {
-  // TODO(001): implement per tasks/001-plan-order.md
-  throw new Error('not implemented: findCycle');
+  const { ids, deps } = normalize(tasks);
+
+  const start = ids.find((id) => canReach(id, id, deps));
+  if (start === undefined) return null;
+
+  // Depth-first search from `start`, exploring dependencies in sorted order,
+  // returning the first path that leads back to `start`.
+  const path = [start];
+  const search = (node) => {
+    for (const dep of deps.get(node)) {
+      if (dep === start) return [...path, dep];
+      if (path.includes(dep)) continue;
+      path.push(dep);
+      const cycle = search(dep);
+      if (cycle) return cycle;
+      path.pop();
+    }
+    return null;
+  };
+
+  return search(start);
+}
+
+/**
+ * Validate the graph shape and return the sorted ids plus normalized
+ * (deduplicated, sorted) dependency lists. Throws on malformed input.
+ *
+ * @param {Record<string, string[]>} tasks
+ * @returns {{ ids: string[], deps: Map<string, string[]> }}
+ */
+function normalize(tasks) {
+  const ids = Object.keys(tasks).sort();
+  const deps = new Map();
+  for (const id of ids) {
+    if (!Array.isArray(tasks[id])) {
+      throw new TypeError(`dependencies for "${id}" must be an array`);
+    }
+    deps.set(id, [...new Set(tasks[id])].sort());
+  }
+  for (const id of ids) {
+    for (const dep of deps.get(id)) {
+      if (!Object.hasOwn(tasks, dep)) {
+        throw new Error(`unknown dependency "${dep}" of task "${id}"`);
+      }
+    }
+  }
+  return { ids, deps };
+}
+
+/**
+ * Whether `target` is reachable from `node` by following dependencies.
+ */
+function canReach(node, target, deps) {
+  const visited = new Set();
+  const stack = [node];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    for (const dep of deps.get(current)) {
+      if (dep === target) return true;
+      if (visited.has(dep)) continue;
+      visited.add(dep);
+      stack.push(dep);
+    }
+  }
+  return false;
 }
