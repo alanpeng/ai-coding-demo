@@ -127,6 +127,51 @@ function searchFrom(tasks, start) {
   return visit(start);
 }
 
+/**
+ * Group tasks into waves such that every task in a wave depends only on tasks
+ * in earlier waves. Each wave is the earliest a task can run, and is sorted
+ * lexicographically.
+ *
+ * @param {Record<string, string[]>} tasks Task id -> dependency ids.
+ * @returns {string[][]} Waves of task ids, from wave 0 onward.
+ * @throws {CycleError} If the graph contains a cycle.
+ * @throws {Error} If a dependency id is not a key of `tasks`.
+ * @throws {TypeError} If `tasks` is not a plain object, or a dependency value
+ *   is not an array.
+ */
+export function planWaves(tasks) {
+  if (tasks === null || typeof tasks !== 'object' || Array.isArray(tasks)) {
+    throw new TypeError('tasks must be a plain object');
+  }
+  validate(tasks);
+
+  const remaining = new Set(Object.keys(tasks));
+  const waves = [];
+  const emitted = new Set();
+
+  while (remaining.size > 0) {
+    const ready = [];
+    for (const id of remaining) {
+      if (tasks[id].every((dep) => emitted.has(dep))) {
+        ready.push(id);
+      }
+    }
+
+    if (ready.length === 0) {
+      throw new CycleError(findCycle(tasks));
+    }
+
+    ready.sort();
+    waves.push(ready);
+    for (const id of ready) {
+      emitted.add(id);
+      remaining.delete(id);
+    }
+  }
+
+  return waves;
+}
+
 export function findCycle(tasks) {
   validate(tasks);
 
